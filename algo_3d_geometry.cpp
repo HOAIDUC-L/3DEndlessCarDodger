@@ -42,7 +42,7 @@ Vector3 calcNormal(const Vector3& v0, const Vector3& v1, const Vector3& v2) {
 
 // ============================================================================
 // 2. CÁC HÀM DỰNG HÌNH KHỐI 3D NGUYÊN THỦY (PRIMITIVES)
-// [LƯU Ý]: Mọi bề mặt đều tuân thủ quy ước đỉnh ngược chiều kim đồng hồ (GL_CCW)
+// [QUY ƯỚC ĐỈNH NGƯỢC CHIỀU KIM ĐỒNG HỒ - GL_CCW]
 // ============================================================================
 void drawCuboid(float width, float height, float length) {
     float w2 = width * 0.5f;
@@ -232,23 +232,17 @@ void drawCone(float radius, float height, int slices) {
 }
 
 // ============================================================================
-// 3. CÁC HÀM LẮP GHÉP ĐỐI TƯỢNG PHỨC HỢP & NÂNG CẤP THẨM MỸ
+// 3. ĐỔ BÓNG GẦM XE (PLANAR SHADOW) & BÁNH XE THỂ THAO CAO CẤP
 // ============================================================================
-
-/**
- * [THUẬT TOÁN ĐỔ BÓNG PHẲNG GẦM XE (PLANAR SHADOW)]
- * Sử dụng GL_BLEND vẽ một vệt bóng đen bán trong suốt nằm ngay sát mặt đường (Y = 0.015m)
- * giúp chiếc xe như bám chặt vào mặt đường và tăng chiều sâu không gian.
- */
 void drawVehicleShadow(float x, float z, float width, float length) {
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_COLOR_BUFFER_BIT);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_LIGHTING);
 
-    glColor4f(0.01f, 0.01f, 0.01f, 0.42f);
+    glColor4f(0.01f, 0.01f, 0.01f, 0.44f);
 
-    float rx = width * 0.55f;
+    float rx = width * 0.54f;
     float rz = length * 0.52f;
     int segments = 16;
 
@@ -263,217 +257,496 @@ void drawVehicleShadow(float x, float z, float width, float length) {
     glPopAttrib();
 }
 
-void drawWheel(float radius, float width, float rotationAngle) {
+/**
+ * [BÁNH XE THỂ THAO CAO CẤP - ĐỐI XỨNG HOÀN HẢO 2 BÊN]
+ * Khắc phục triệt để lỗi lệch tâm:
+ *  - isLeft = true: Quay +90 độ quanh Z để trục +Y hướng sang -X (hướng ra ngoài bên trái xe).
+ *  - isLeft = false: Quay -90 độ quanh Z để trục +Y hướng sang +X (hướng ra ngoài bên phải xe).
+ *  - Căn giữa hình trụ bánh xe đối xứng qua tâm mount (-width/2 dọc trục Y).
+ *  - Cả 2 bên xe hoàn toàn cân xứng đối xứng gương, mặt mâm đúc hướng ra ngoài.
+ */
+void drawSportsWheel(float radius, float width, float rotationAngle, bool isLeft) {
     glPushMatrix();
-    glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
-    glTranslatef(-width * 0.5f, 0.0f, 0.0f);
 
-    glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
+    // 1. Định hướng trục bánh xe theo trục X của thế giới
+    if (isLeft) {
+        glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
+    } else {
+        glRotatef(-90.0f, 0.0f, 0.0f, 1.0f);
+    }
 
-    // Lốp cao su đen
-    applyMaterial(0.12f, 0.12f, 0.12f, 16.0f, 0.2f);
-    drawCylinder(radius, width, 16);
+    // 2. Căn giữa hình trụ bánh xe đối xứng qua tâm:
+    // Cylinder vẽ từ Y = 0 đến Y = width, nên ta lùi lại -width/2 để bánh xe
+    // nằm cân đối từ -width/2 (mặt trong) đến +width/2 (mặt ngoài)
+    glTranslatef(0.0f, -width * 0.5f, 0.0f);
 
-    // Mâm kim loại 2 bên
-    applyMaterial(0.85f, 0.85f, 0.90f, 64.0f, 0.8f);
+    // 3. Đĩa phanh kim loại & Cùm phanh đĩa (Brake Caliper) màu đỏ
+    // Nằm ở phía trong mâm xe, không quay theo bánh xe
+    applyMaterial(0.72f, 0.74f, 0.78f, 64.0f, 0.6f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.02f, 0.0f);
+    drawCylinder(radius * 0.70f, 0.02f, 14);
+    glPopMatrix();
+
+    applyMaterial(0.95f, 0.08f, 0.08f, 32.0f);
+    glPushMatrix();
+    glTranslatef(radius * 0.52f, 0.01f, 0.0f);
+    drawCuboid(radius * 0.35f, 0.05f, radius * 0.35f);
+    glPopMatrix();
+
+    // 4. [BIẾN ĐỔI HÌNH HỌC]: Bánh xe và mâm xoay quanh trục theo tốc độ lăn
+    float rollRot = isLeft ? -rotationAngle : rotationAngle;
+    glRotatef(rollRot, 0.0f, 1.0f, 0.0f);
+
+    // 5. Lốp cao su thể thao đen (trải đều từ Y = 0 đến Y = width)
+    applyMaterial(0.10f, 0.10f, 0.12f, 16.0f, 0.15f);
+    drawCylinder(radius, width, 18);
+
+    // 6. Mâm đúc hợp kim sáng bóng ở mặt ngoài xe (Y = width)
+    applyMaterial(0.88f, 0.90f, 0.94f, 96.0f, 0.85f);
     glPushMatrix();
     glTranslatef(0.0f, width + 0.005f, 0.0f);
-    drawCylinder(radius * 0.65f, 0.01f, 12);
+    drawCylinder(radius * 0.72f, 0.01f, 14);
     glPopMatrix();
 
+    // Mâm trong (Y = -0.01f)
     glPushMatrix();
-    glTranslatef(0.0f, -0.015f, 0.0f);
-    drawCylinder(radius * 0.65f, 0.01f, 12);
+    glTranslatef(0.0f, -0.01f, 0.0f);
+    drawCylinder(radius * 0.72f, 0.01f, 14);
     glPopMatrix();
 
-    // Nan hoa nan quạt
-    applyMaterial(0.3f, 0.3f, 0.35f, 32.0f);
-    glPushMatrix();
-    glTranslatef(0.0f, width + 0.01f, 0.0f);
-    drawCuboid(radius * 1.1f, 0.01f, radius * 0.2f);
-    drawCuboid(radius * 0.2f, 0.01f, radius * 1.1f);
-    glPopMatrix();
+    // 7. Năm chấu thể thao hình ngôi sao ở mặt ngoài xe
+    applyMaterial(0.25f, 0.28f, 0.32f, 48.0f);
+    for (int s = 0; s < 5; ++s) {
+        glPushMatrix();
+        glRotatef(s * 72.0f, 0.0f, 1.0f, 0.0f);
+        glTranslatef(0.0f, width + 0.01f, 0.0f);
+        drawCuboid(radius * 1.15f, 0.01f, radius * 0.14f);
+        glPopMatrix();
+    }
 
     glPopMatrix();
 }
 
-/**
- * [XE CỦA NGƯỜI CHƠI VỚI KÍNH CHẮN GIÓ BÁN TRONG SUỐT]
- */
-void drawCar(float x, float z, float rollAngle, float wheelAngle, bool isNight) {
-    // 1. Vẽ bóng đổ gầm xe trước
-    drawVehicleShadow(x, z, 2.2f, 4.4f);
+// ============================================================================
+// 4. SIÊU XE THỂ THAO CỦA NGƯỜI CHƠI (SUPERCAR)
+// ============================================================================
+void drawSuperCar(float x, float z, float rollAngle, float wheelAngle, bool isNight) {
+    // Đổ bóng gầm xe thể thao
+    drawVehicleShadow(x, z, 2.3f, 4.6f);
 
     glPushMatrix();
     glTranslatef(x, 0.0f, z);
     glRotatef(-rollAngle, 0.0f, 0.0f, 1.0f);
 
-    // Thân gầm xe thể thao đỏ
-    applyMaterial(0.92f, 0.12f, 0.15f, 64.0f, 0.7f);
+    // 1. Gầm và Thân xe chính: Màu đỏ thể thao Italian Racing Red rực rỡ
+    applyMaterial(0.95f, 0.08f, 0.10f, 80.0f, 0.8f);
     glPushMatrix();
     glTranslatef(0.0f, 0.22f, 0.0f);
-    drawCuboid(1.8f, 0.45f, 4.0f);
+    drawCuboid(1.85f, 0.40f, 4.1f);
     glPopMatrix();
 
-    // Mũi xe thấp khí động học
-    applyMaterial(0.85f, 0.10f, 0.12f, 64.0f, 0.7f);
+    // 2. Cản trước khí động học với Lip carbon đen bóng
+    applyMaterial(0.06f, 0.06f, 0.08f, 32.0f);
     glPushMatrix();
-    glTranslatef(0.0f, 0.15f, -1.8f);
-    drawCuboid(1.72f, 0.35f, 0.9f);
+    glTranslatef(0.0f, 0.12f, -2.15f);
+    drawCuboid(1.95f, 0.12f, 0.45f);
     glPopMatrix();
 
-    // Khung mui cabin
-    applyMaterial(0.18f, 0.20f, 0.24f, 64.0f, 0.8f);
+    // Mũi xe vuốt thấp thể thao
+    applyMaterial(0.90f, 0.06f, 0.08f, 80.0f, 0.8f);
     glPushMatrix();
-    glTranslatef(0.0f, 0.65f, 0.2f);
-    drawCuboid(1.4f, 0.5f, 2.1f);
+    glTranslatef(0.0f, 0.22f, -1.85f);
+    drawCuboid(1.72f, 0.26f, 0.85f);
     glPopMatrix();
 
-    // [NÂNG CẤP THẨM MỸ]: Kính chắn gió trước và kính hông bán trong suốt (Transparent Glass)
+    // Hốc gió làm mát trên nắp capo
+    applyMaterial(0.12f, 0.12f, 0.14f, 48.0f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.38f, -1.45f);
+    drawCuboid(0.85f, 0.04f, 0.55f);
+    glPopMatrix();
+
+    // 3. Cabin & Kính chắn gió buồng lái Panoramic bán trong suốt
+    // Nẹp trụ A và trụ C màu đen bóng
+    applyMaterial(0.12f, 0.12f, 0.15f, 96.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.62f, 0.15f);
+    drawCuboid(1.38f, 0.48f, 2.1f);
+    glPopMatrix();
+
+    // Kính chắn gió trước vát nghiêng trong suốt (GL_BLEND)
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(0.25f, 0.55f, 0.85f, 0.55f);
-    GLfloat glassMat[4] = { 0.25f, 0.55f, 0.85f, 0.55f };
-    GLfloat glassSpec[4] = { 0.9f, 0.9f, 0.9f, 1.0f };
+    glColor4f(0.20f, 0.50f, 0.85f, 0.52f);
+    GLfloat glassMat[4] = { 0.20f, 0.50f, 0.85f, 0.52f };
+    GLfloat glassSpec[4] = { 0.95f, 0.95f, 0.95f, 1.0f };
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, glassMat);
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, glassSpec);
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 128.0f);
 
     glPushMatrix();
-    glTranslatef(0.0f, 0.65f, -0.9f);
-    glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
-    drawCuboid(1.36f, 0.45f, 0.1f);
+    glTranslatef(0.0f, 0.62f, -0.95f);
+    glRotatef(28.0f, 1.0f, 0.0f, 0.0f);
+    drawCuboid(1.34f, 0.46f, 0.08f);
+    glPopMatrix();
+
+    // Kính chắn gió sau vuốt thoải
+    glPushMatrix();
+    glTranslatef(0.0f, 0.62f, 1.25f);
+    glRotatef(-28.0f, 1.0f, 0.0f, 0.0f);
+    drawCuboid(1.34f, 0.46f, 0.08f);
     glPopMatrix();
     glPopAttrib();
 
-    // Cánh gió thể thao phía sau (Spoiler)
-    applyMaterial(0.1f, 0.1f, 0.12f, 32.0f);
-    glPushMatrix(); glTranslatef(-0.6f, 0.65f, 1.7f); drawCuboid(0.1f, 0.35f, 0.15f); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.6f, 0.65f, 1.7f); drawCuboid(0.1f, 0.35f, 0.15f); glPopMatrix();
-    applyMaterial(0.92f, 0.12f, 0.15f, 64.0f, 0.6f);
-    glPushMatrix(); glTranslatef(0.0f, 0.98f, 1.7f); drawCuboid(1.9f, 0.08f, 0.45f); glPopMatrix();
+    // 4. Gương chiếu hậu 2 bên (Side Mirrors)
+    applyMaterial(0.88f, 0.05f, 0.08f, 64.0f);
+    glPushMatrix(); glTranslatef(-1.02f, 0.62f, -0.65f); drawCuboid(0.26f, 0.12f, 0.16f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.02f, 0.62f, -0.65f); drawCuboid(0.26f, 0.12f, 0.16f); glPopMatrix();
+    // Mặt kính gương phản quang
+    applyMaterial(0.95f, 0.95f, 0.98f, 128.0f, 1.0f);
+    glPushMatrix(); glTranslatef(-1.02f, 0.62f, -0.56f); drawCuboid(0.24f, 0.10f, 0.02f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.02f, 0.62f, -0.56f); drawCuboid(0.24f, 0.10f, 0.02f); glPopMatrix();
 
-    // Đèn pha phía trước
+    // 5. Cánh gió thể thao GT kép phía sau (Dual Wing Spoiler)
+    applyMaterial(0.08f, 0.08f, 0.10f, 48.0f);
+    glPushMatrix(); glTranslatef(-0.65f, 0.62f, 1.85f); drawCuboid(0.08f, 0.42f, 0.12f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.65f, 0.62f, 1.85f); drawCuboid(0.08f, 0.42f, 0.12f); glPopMatrix();
+    applyMaterial(0.95f, 0.08f, 0.10f, 80.0f, 0.8f);
+    glPushMatrix(); glTranslatef(0.0f, 1.04f, 1.85f); drawCuboid(2.05f, 0.08f, 0.45f); glPopMatrix();
+    // Cánh lướt gió phụ bên dưới
+    applyMaterial(0.08f, 0.08f, 0.10f, 32.0f);
+    glPushMatrix(); glTranslatef(0.0f, 0.85f, 1.85f); drawCuboid(1.65f, 0.05f, 0.30f); glPopMatrix();
+
+    // 6. Cụm 4 ống xả thể thao mạ Chrome phía sau (Quad Exhausts)
+    applyMaterial(0.85f, 0.88f, 0.92f, 96.0f, 0.9f);
+    float exY = 0.20f, exZ = 2.06f;
+    glPushMatrix(); glTranslatef(-0.62f, exY, exZ); drawCylinder(0.07f, 0.18f, 10); glPopMatrix();
+    glPushMatrix(); glTranslatef(-0.46f, exY, exZ); drawCylinder(0.07f, 0.18f, 10); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.46f, exY, exZ); drawCylinder(0.07f, 0.18f, 10); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.62f, exY, exZ); drawCylinder(0.07f, 0.18f, 10); glPopMatrix();
+
+    // 7. Cụm đèn pha trước công nghệ LED Daylight
     if (isNight) {
-        applyEmissiveMaterial(1.0f, 0.95f, 0.7f, 1.0f);
+        applyEmissiveMaterial(1.0f, 0.98f, 0.75f, 1.0f);
     } else {
-        applyMaterial(0.95f, 0.95f, 0.8f, 64.0f, 0.8f);
+        applyMaterial(0.95f, 0.95f, 0.85f, 64.0f, 0.8f);
     }
-    glPushMatrix(); glTranslatef(-0.65f, 0.32f, -2.01f); drawCuboid(0.35f, 0.18f, 0.1f); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.65f, 0.32f, -2.01f); drawCuboid(0.35f, 0.18f, 0.1f); glPopMatrix();
+    glPushMatrix(); glTranslatef(-0.68f, 0.32f, -2.06f); drawCuboid(0.38f, 0.14f, 0.10f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.68f, 0.32f, -2.06f); drawCuboid(0.38f, 0.14f, 0.10f); glPopMatrix();
 
-    // Đèn hậu đỏ
-    applyEmissiveMaterial(0.95f, 0.05f, 0.05f, isNight ? 0.9f : 0.3f);
-    glPushMatrix(); glTranslatef(-0.65f, 0.42f, 2.01f); drawCuboid(0.35f, 0.15f, 0.1f); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.65f, 0.42f, 2.01f); drawCuboid(0.35f, 0.15f, 0.1f); glPopMatrix();
+    // Dải đèn hậu LED Neon đỏ rực suốt chiều ngang đuôi xe
+    applyEmissiveMaterial(0.98f, 0.05f, 0.05f, isNight ? 1.0f : 0.45f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.42f, 2.06f);
+    drawCuboid(1.76f, 0.12f, 0.08f);
+    glPopMatrix();
 
-    // Bốn bánh xe lăn
-    float wR = 0.36f, wW = 0.30f, wY = 0.36f;
-    glPushMatrix(); glTranslatef(-0.95f, wY, -1.25f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.95f, wY, -1.25f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef(-0.95f, wY,  1.25f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.95f, wY,  1.25f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
+    // 8. Bốn bánh xe thể thao hợp kim cao cấp
+    float wR = 0.36f, wW = 0.28f, wY = 0.36f;
+    glPushMatrix(); glTranslatef(-0.95f, wY, -1.25f); drawSportsWheel(wR, wW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.95f, wY, -1.25f); drawSportsWheel(wR, wW, wheelAngle, false); glPopMatrix();
+    glPushMatrix(); glTranslatef(-0.95f, wY,  1.25f); drawSportsWheel(wR, wW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.95f, wY,  1.25f); drawSportsWheel(wR, wW, wheelAngle, false); glPopMatrix();
+
+    glPopMatrix();
+}
+
+// ============================================================================
+// 5. CÁC PHƯƠNG TIỆN GIAO THÔNG CẢN ĐƯỜNG (TRAFFIC VEHICLES)
+// ============================================================================
+
+/**
+ * [PHƯƠNG TIỆN 1]: XE TẢI CONTAINER CỠ LỚN (SEMI-TRAILER TRUCK)
+ * Kích thước đồ sộ: Rộng 2.3m x Cao 2.9m x Dài 8.2m
+ */
+void drawSemiTruck(float x, float y, float z, float r, float g, float b, float wheelAngle) {
+    drawVehicleShadow(x, z, 2.6f, 8.6f);
+
+    glPushMatrix();
+    glTranslatef(x, y, z);
+
+    // 1. Thùng Container phía sau (Màu riêng biệt hoặc xám bạc)
+    applyMaterial(r, g, b, 24.0f, 0.2f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.45f, 0.8f);
+    drawCuboid(2.25f, 2.35f, 5.6f);
+    glPopMatrix();
+
+    // Gân dập nổi của thùng Container
+    applyMaterial(r * 0.85f, g * 0.85f, b * 0.85f, 32.0f);
+    for (float cz = -1.6f; cz <= 3.2f; cz += 0.8f) {
+        glPushMatrix();
+        glTranslatef(0.0f, 0.45f, cz);
+        drawCuboid(2.28f, 2.36f, 0.12f);
+        glPopMatrix();
+    }
+
+    // Cửa sau Container với thanh khóa mạ kẽm
+    applyMaterial(0.2f, 0.2f, 0.2f, 16.0f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.45f, 3.61f);
+    drawCuboid(2.15f, 2.25f, 0.05f);
+    glPopMatrix();
+
+    // 2. Đầu kéo xe tải phía trước (Tractor Cab)
+    applyMaterial(0.15f, 0.35f, 0.75f, 64.0f, 0.6f); // Xanh dương hoặc đỏ
+    glPushMatrix();
+    glTranslatef(0.0f, 0.40f, -2.8f);
+    drawCuboid(2.2f, 2.0f, 2.4f);
+    glPopMatrix();
+
+    // Lưới tản nhiệt mạ Chrome khổng lồ ở đầu xe
+    applyMaterial(0.85f, 0.88f, 0.92f, 96.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.35f, -4.01f);
+    drawCuboid(1.7f, 1.1f, 0.12f);
+    glPopMatrix();
+
+    // Kính chắn gió đầu kéo
+    applyMaterial(0.18f, 0.35f, 0.55f, 96.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, 1.45f, -3.4f);
+    drawCuboid(1.95f, 0.75f, 0.85f);
+    glPopMatrix();
+
+    // 2 Ống xả đứng mạ Chrome cao vút 2 bên đầu kéo
+    applyMaterial(0.85f, 0.88f, 0.92f, 96.0f, 0.9f);
+    glPushMatrix(); glTranslatef(-1.15f, 1.2f, -1.8f); drawCylinder(0.08f, 1.9f, 10); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.15f, 1.2f, -1.8f); drawCylinder(0.08f, 1.9f, 10); glPopMatrix();
+
+    // Đèn hậu đỏ cảnh báo xe tải
+    applyEmissiveMaterial(0.95f, 0.1f, 0.1f, 0.9f);
+    glPushMatrix(); glTranslatef(-0.85f, 0.6f, 3.62f); drawCuboid(0.35f, 0.25f, 0.08f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.85f, 0.6f, 3.62f); drawCuboid(0.35f, 0.25f, 0.08f); glPopMatrix();
+
+    // 3. Hệ thống 8 bánh xe tải hạng nặng
+    float twR = 0.42f, twW = 0.35f, twY = 0.42f;
+    // Bánh đầu kéo
+    glPushMatrix(); glTranslatef(-1.15f, twY, -3.2f); drawSportsWheel(twR, twW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.15f, twY, -3.2f); drawSportsWheel(twR, twW, wheelAngle, false); glPopMatrix();
+    // Bánh đôi trục sau đầu kéo
+    glPushMatrix(); glTranslatef(-1.15f, twY, -1.8f); drawSportsWheel(twR, twW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.15f, twY, -1.8f); drawSportsWheel(twR, twW, wheelAngle, false); glPopMatrix();
+    // Bánh đôi trục sau Container (2 cầu đôi)
+    glPushMatrix(); glTranslatef(-1.15f, twY,  2.2f); drawSportsWheel(twR, twW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.15f, twY,  2.2f); drawSportsWheel(twR, twW, wheelAngle, false); glPopMatrix();
+    glPushMatrix(); glTranslatef(-1.15f, twY,  3.2f); drawSportsWheel(twR, twW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.15f, twY,  3.2f); drawSportsWheel(twR, twW, wheelAngle, false); glPopMatrix();
 
     glPopMatrix();
 }
 
 /**
- * [XE CẢN ĐƯỜNG ĐỐI THỦ]
+ * [PHƯƠNG TIỆN 2]: XE BUÝT THÀNH PHỐ (CITY TRANSIT BUS)
+ * Kích thước: Rộng 2.2m x Cao 2.5m x Dài 6.8m
  */
-void drawTrafficCar(float x, float y, float z, float r, float g, float b, float wheelAngle) {
-    // Đổ bóng dưới gầm xe đối thủ
-    drawVehicleShadow(x, z, 2.1f, 4.2f);
+void drawCityBus(float x, float y, float z, float r, float g, float b, float wheelAngle) {
+    drawVehicleShadow(x, z, 2.5f, 7.2f);
+
+    glPushMatrix();
+    glTranslatef(x, y, z);
+
+    // 1. Thân xe buýt chính
+    applyMaterial(r, g, b, 48.0f, 0.5f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.35f, 0.0f);
+    drawCuboid(2.15f, 2.05f, 6.6f);
+    glPopMatrix();
+
+    // 2. Dải cửa sổ kính hành khách chạy suốt 2 bên sườn xe
+    applyMaterial(0.18f, 0.32f, 0.45f, 96.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, 1.25f, 0.0f);
+    drawCuboid(2.18f, 0.85f, 5.8f);
+    glPopMatrix();
+
+    // Kính chắn gió rộng phía trước
+    glPushMatrix();
+    glTranslatef(0.0f, 1.15f, -3.31f);
+    drawCuboid(1.95f, 1.05f, 0.08f);
+    glPopMatrix();
+
+    // Bảng hiệu số tuyến xe buýt phát sáng phía trên kính lái
+    applyEmissiveMaterial(0.1f, 0.9f, 0.2f, 0.85f);
+    glPushMatrix();
+    glTranslatef(0.0f, 2.05f, -3.31f);
+    drawCuboid(1.4f, 0.25f, 0.08f);
+    glPopMatrix();
+
+    // Cửa lên xuống hành khách bên phải
+    applyMaterial(0.15f, 0.15f, 0.18f, 24.0f);
+    glPushMatrix();
+    glTranslatef(1.09f, 0.35f, -1.8f);
+    drawCuboid(0.05f, 1.75f, 0.95f);
+    glPopMatrix();
+
+    // Cụm đèn hậu xe buýt
+    applyEmissiveMaterial(0.95f, 0.08f, 0.08f, 0.9f);
+    glPushMatrix(); glTranslatef(-0.75f, 0.75f, 3.31f); drawCuboid(0.3f, 0.55f, 0.08f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.75f, 0.75f, 3.31f); drawCuboid(0.3f, 0.55f, 0.08f); glPopMatrix();
+
+    // 3. Bốn bánh xe buýt
+    float bwR = 0.38f, bwW = 0.32f, bwY = 0.38f;
+    glPushMatrix(); glTranslatef(-1.10f, bwY, -2.1f); drawSportsWheel(bwR, bwW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.10f, bwY, -2.1f); drawSportsWheel(bwR, bwW, wheelAngle, false); glPopMatrix();
+    glPushMatrix(); glTranslatef(-1.10f, bwY,  2.0f); drawSportsWheel(bwR, bwW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 1.10f, bwY,  2.0f); drawSportsWheel(bwR, bwW, wheelAngle, false); glPopMatrix();
+
+    glPopMatrix();
+}
+
+/**
+ * [PHƯƠNG TIỆN 3]: XE BÁN TẢI ĐỊA HÌNH (OFF-ROAD PICKUP TRUCK / SUV)
+ * Kích thước: Rộng 1.9m x Cao 1.6m x Dài 4.4m
+ */
+void drawPickupTruck(float x, float y, float z, float r, float g, float b, float wheelAngle) {
+    drawVehicleShadow(x, z, 2.2f, 4.8f);
+
+    glPushMatrix();
+    glTranslatef(x, y, z);
+
+    // 1. Thùng xe bán tải phía sau
+    applyMaterial(r, g, b, 48.0f, 0.5f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.40f, 0.85f);
+    drawCuboid(1.85f, 0.70f, 2.1f);
+    glPopMatrix();
+
+    // Khung chống lật thể thao (Roll Bar) trên thùng xe
+    applyMaterial(0.12f, 0.12f, 0.14f, 32.0f);
+    glPushMatrix(); glTranslatef(-0.75f, 1.10f, 0.05f); drawCuboid(0.1f, 0.55f, 0.1f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.75f, 1.10f, 0.05f); drawCuboid(0.1f, 0.55f, 0.1f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.0f,  1.60f, 0.05f); drawCuboid(1.6f, 0.08f, 0.1f); glPopMatrix();
+
+    // 2. Cabin xe bán tải (Gầm cao)
+    applyMaterial(r, g, b, 48.0f, 0.5f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.40f, -0.65f);
+    drawCuboid(1.85f, 1.05f, 1.8f);
+    glPopMatrix();
+
+    // Kính chắn gió cabin
+    applyMaterial(0.20f, 0.35f, 0.55f, 96.0f, 0.85f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.95f, -1.56f);
+    glRotatef(20.0f, 1.0f, 0.0f, 0.0f);
+    drawCuboid(1.65f, 0.55f, 0.1f);
+    glPopMatrix();
+
+    // Nắp capo mũi xe
+    applyMaterial(r, g, b, 48.0f, 0.5f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.40f, -1.85f);
+    drawCuboid(1.80f, 0.55f, 1.0f);
+    glPopMatrix();
+
+    // Cản va bảo vệ trước (Bull Bar) địa hình
+    applyMaterial(0.15f, 0.15f, 0.18f, 48.0f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.35f, -2.40f);
+    drawCuboid(1.90f, 0.45f, 0.20f);
+    glPopMatrix();
+
+    // Đèn hậu đỏ phía sau thùng
+    applyEmissiveMaterial(0.95f, 0.05f, 0.05f, 0.9f);
+    glPushMatrix(); glTranslatef(-0.75f, 0.65f, 1.91f); drawCuboid(0.25f, 0.35f, 0.06f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.75f, 0.65f, 1.91f); drawCuboid(0.25f, 0.35f, 0.06f); glPopMatrix();
+
+    // 3. Bánh xe địa hình gầm cao (Lốp to khỏe)
+    float pwR = 0.40f, pwW = 0.32f, pwY = 0.40f;
+    glPushMatrix(); glTranslatef(-0.95f, pwY, -1.35f); drawSportsWheel(pwR, pwW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.95f, pwY, -1.35f); drawSportsWheel(pwR, pwW, wheelAngle, false); glPopMatrix();
+    glPushMatrix(); glTranslatef(-0.95f, pwY,  1.15f); drawSportsWheel(pwR, pwW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.95f, pwY,  1.15f); drawSportsWheel(pwR, pwW, wheelAngle, false); glPopMatrix();
+
+    glPopMatrix();
+}
+
+/**
+ * [PHƯƠNG TIỆN 4]: XE SEDAN / TAXI ĐÔ THỊ (CITY SEDAN / TAXI)
+ * Kích thước: Rộng 1.8m x Cao 1.3m x Dài 4.0m
+ */
+void drawSedanCar(float x, float y, float z, float r, float g, float b, float wheelAngle) {
+    drawVehicleShadow(x, z, 2.1f, 4.4f);
 
     glPushMatrix();
     glTranslatef(x, y, z);
 
     // Thân xe
-    applyMaterial(r, g, b, 48.0f, 0.5f);
+    applyMaterial(r, g, b, 64.0f, 0.6f);
     glPushMatrix();
     glTranslatef(0.0f, 0.22f, 0.0f);
-    drawCuboid(1.75f, 0.45f, 3.8f);
+    drawCuboid(1.78f, 0.45f, 3.9f);
     glPopMatrix();
 
-    // Cabin
-    applyMaterial(0.2f, 0.25f, 0.3f, 64.0f, 0.8f);
+    // Mui cabin
+    applyMaterial(r * 0.95f, g * 0.95f, b * 0.95f, 64.0f, 0.6f);
     glPushMatrix();
-    glTranslatef(0.0f, 0.65f, 0.0f);
-    drawCuboid(1.4f, 0.50f, 2.2f);
+    glTranslatef(0.0f, 0.65f, 0.1f);
+    drawCuboid(1.42f, 0.50f, 2.1f);
     glPopMatrix();
+
+    // Kính chắn gió trước và sau
+    applyMaterial(0.18f, 0.35f, 0.55f, 96.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, 0.65f, -0.96f);
+    glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+    drawCuboid(1.36f, 0.45f, 0.1f);
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(0.0f, 0.65f, 1.16f);
+    glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
+    drawCuboid(1.36f, 0.45f, 0.1f);
+    glPopMatrix();
+
+    // Biển hiệu Taxi trên nóc xe (nếu xe màu vàng tươi)
+    if (r > 0.8f && g > 0.7f && b < 0.3f) {
+        applyEmissiveMaterial(1.0f, 0.9f, 0.1f, 0.9f);
+        glPushMatrix();
+        glTranslatef(0.0f, 1.18f, 0.1f);
+        drawCuboid(0.6f, 0.15f, 0.25f);
+        glPopMatrix();
+    }
 
     // Đèn hậu đỏ
-    applyEmissiveMaterial(0.9f, 0.1f, 0.1f, 0.8f);
-    glPushMatrix(); glTranslatef(-0.6f, 0.35f, 1.91f); drawCuboid(0.3f, 0.14f, 0.08f); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.6f, 0.35f, 1.91f); drawCuboid(0.3f, 0.14f, 0.08f); glPopMatrix();
+    applyEmissiveMaterial(0.95f, 0.08f, 0.08f, 0.85f);
+    glPushMatrix(); glTranslatef(-0.62f, 0.38f, 1.96f); drawCuboid(0.32f, 0.15f, 0.08f); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.62f, 0.38f, 1.96f); drawCuboid(0.32f, 0.15f, 0.08f); glPopMatrix();
 
     // Bánh xe
-    float wR = 0.34f, wW = 0.28f, wY = 0.34f;
-    glPushMatrix(); glTranslatef(-0.92f, wY, -1.1f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.92f, wY, -1.1f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef(-0.92f, wY,  1.1f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
-    glPushMatrix(); glTranslatef( 0.92f, wY,  1.1f); drawWheel(wR, wW, wheelAngle); glPopMatrix();
+    float swR = 0.35f, swW = 0.26f, swY = 0.35f;
+    glPushMatrix(); glTranslatef(-0.90f, swY, -1.15f); drawSportsWheel(swR, swW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.90f, swY, -1.15f); drawSportsWheel(swR, swW, wheelAngle, false); glPopMatrix();
+    glPushMatrix(); glTranslatef(-0.90f, swY,  1.15f); drawSportsWheel(swR, swW, wheelAngle, true); glPopMatrix();
+    glPushMatrix(); glTranslatef( 0.90f, swY,  1.15f); drawSportsWheel(swR, swW, wheelAngle, false); glPopMatrix();
 
     glPopMatrix();
 }
 
-void drawObstacleCrate(float x, float y, float z, float size) {
-    drawVehicleShadow(x, z, size * 1.1f, size * 1.1f);
-    glPushMatrix();
-    glTranslatef(x, y, z);
-    applyMaterial(0.65f, 0.42f, 0.22f, 16.0f, 0.1f);
-    drawCuboid(size, size, size);
-
-    applyMaterial(0.45f, 0.26f, 0.12f, 24.0f, 0.15f);
-    glPushMatrix();
-    glTranslatef(0.0f, size * 0.5f, 0.0f);
-    drawCuboid(size * 1.02f, size * 0.15f, size * 1.02f);
-    glPopMatrix();
-    glPopMatrix();
-}
-
-void drawObstacleBarrier(float x, float y, float z, float w, float h, float l) {
-    drawVehicleShadow(x, z, w * 1.05f, l * 1.05f);
-    glPushMatrix();
-    glTranslatef(x, y, z);
-    applyMaterial(0.95f, 0.45f, 0.05f, 48.0f, 0.4f);
-    drawFrustum(w, l, w * 0.4f, l * 0.4f, h);
-
-    applyMaterial(0.95f, 0.95f, 0.95f, 64.0f, 0.8f);
-    glPushMatrix();
-    glTranslatef(0.0f, h * 0.4f, 0.0f);
-    drawFrustum(w * 0.75f, l * 0.75f, w * 0.55f, l * 0.55f, h * 0.25f);
-    glPopMatrix();
-    glPopMatrix();
-}
-
+// ============================================================================
+// 6. CẢNH QUAN HAI BÊN ĐƯỜNG & MẶT ĐƯỜNG CHIA LƯỚI
+// ============================================================================
 void drawHouse(float x, float y, float z, float scale, float r, float g, float b) {
     glPushMatrix();
     glTranslatef(x, y, z);
     glScalef(scale, scale, scale);
 
-    float houseW = 5.0f;
-    float houseH = 4.2f;
-    float houseL = 6.0f;
-
+    float houseW = 5.0f, houseH = 4.2f, houseL = 6.0f;
     applyMaterial(r, g, b, 24.0f, 0.2f);
     drawCuboid(houseW, houseH, houseL);
 
     applyMaterial(0.35f, 0.20f, 0.10f, 16.0f);
-    glPushMatrix();
-    glTranslatef(0.0f, 0.0f, houseL * 0.5f + 0.02f);
-    drawCuboid(1.2f, 2.2f, 0.05f);
-    glPopMatrix();
+    glPushMatrix(); glTranslatef(0.0f, 0.0f, houseL * 0.5f + 0.02f); drawCuboid(1.2f, 2.2f, 0.05f); glPopMatrix();
 
     applyMaterial(0.6f, 0.8f, 0.95f, 80.0f, 0.8f);
     glPushMatrix(); glTranslatef( 1.5f, 2.2f, houseL * 0.5f + 0.02f); drawCuboid(1.0f, 1.0f, 0.05f); glPopMatrix();
     glPushMatrix(); glTranslatef(-1.5f, 2.2f, houseL * 0.5f + 0.02f); drawCuboid(1.0f, 1.0f, 0.05f); glPopMatrix();
 
     applyMaterial(0.75f, 0.22f, 0.15f, 32.0f, 0.3f);
-    glPushMatrix();
-    glTranslatef(0.0f, houseH, 0.0f);
-    drawPyramid(houseW + 0.8f, houseL + 0.8f, 2.8f);
-    glPopMatrix();
+    glPushMatrix(); glTranslatef(0.0f, houseH, 0.0f); drawPyramid(houseW + 0.8f, houseL + 0.8f, 2.8f); glPopMatrix();
 
     glPopMatrix();
 }
@@ -487,16 +760,10 @@ void drawTree(float x, float y, float z, float scale) {
     drawCylinder(0.35f, 2.5f, 12);
 
     applyMaterial(0.12f, 0.55f, 0.18f, 24.0f, 0.2f);
-    glPushMatrix();
-    glTranslatef(0.0f, 2.0f, 0.0f);
-    drawCone(1.8f, 3.0f, 14);
-    glPopMatrix();
+    glPushMatrix(); glTranslatef(0.0f, 2.0f, 0.0f); drawCone(1.8f, 3.0f, 14); glPopMatrix();
 
     applyMaterial(0.18f, 0.68f, 0.22f, 24.0f, 0.2f);
-    glPushMatrix();
-    glTranslatef(0.0f, 3.8f, 0.0f);
-    drawCone(1.4f, 2.6f, 14);
-    glPopMatrix();
+    glPushMatrix(); glTranslatef(0.0f, 3.8f, 0.0f); drawCone(1.4f, 2.6f, 14); glPopMatrix();
 
     glPopMatrix();
 }
@@ -510,10 +777,7 @@ void drawLamppost(float x, float y, float z, bool onLeftSide, bool isNight) {
 
     float armLen = 2.4f;
     float dir = onLeftSide ? 1.0f : -1.0f;
-    glPushMatrix();
-    glTranslatef(dir * armLen * 0.5f, 6.8f, 0.0f);
-    drawCuboid(armLen, 0.16f, 0.16f);
-    glPopMatrix();
+    glPushMatrix(); glTranslatef(dir * armLen * 0.5f, 6.8f, 0.0f); drawCuboid(armLen, 0.16f, 0.16f); glPopMatrix();
 
     glPushMatrix();
     glTranslatef(dir * armLen, 6.6f, 0.0f);
@@ -532,15 +796,9 @@ void drawLamppost(float x, float y, float z, bool onLeftSide, bool isNight) {
     glPopMatrix();
 }
 
-/**
- * [NÂNG CẤP CẢNH QUAN: DÃY NÚI HÙNG VĨ Ở XA CHÂN TRỜI]
- * Kết hợp cùng sương mù GL_FOG tạo ra phông nền tự nhiên che khuất mặt cắt xa
- */
 void drawMountains(float roadLength) {
     float startZ = -roadLength - 30.0f;
-    // Dãy núi phía xa
     float mountainData[][5] = {
-        // x, y, z, baseSize, height
         { -90.0f,  0.0f, startZ - 20.0f, 80.0f, 42.0f },
         { -45.0f,  0.0f, startZ - 40.0f, 95.0f, 52.0f },
         {   0.0f,  0.0f, startZ - 50.0f, 110.0f, 60.0f },
@@ -554,7 +812,6 @@ void drawMountains(float roadLength) {
         glTranslatef(mountainData[i][0], mountainData[i][1], mountainData[i][2]);
         drawPyramid(mountainData[i][3], mountainData[i][3], mountainData[i][4]);
 
-        // Đỉnh núi phủ tuyết trắng
         applyMaterial(0.90f, 0.92f, 0.98f, 32.0f, 0.2f);
         glTranslatef(0.0f, mountainData[i][4] * 0.72f, 0.0f);
         drawPyramid(mountainData[i][3] * 0.32f, mountainData[i][3] * 0.32f, mountainData[i][4] * 0.28f);
@@ -562,19 +819,8 @@ void drawMountains(float roadLength) {
     }
 }
 
-/**
- * [CHIA LƯỚI MẶT ĐƯỜNG (SUBDIVIDED GRID) & ĐÓN ĐÈN PHA SPOTLIGHT]
- * Giải thích nguyên lý kỹ thuật cho báo cáo:
- * - Trong mô hình chiếu sáng Gouraud (GL_SMOOTH), OpenGL chỉ tính toán màu sắc ánh sáng
- *   tại các đỉnh đa giác rồi nội suy vào trong mặt phẳng.
- * - Nếu mặt đường chỉ là 1 tứ giác khổng lồ từ z = +30 đến z = -160, các đỉnh nằm quá xa
- *   tâm chiếu của đèn pha Spotlight GL_LIGHT1, dẫn tới ánh đèn không thể hiển thị trên mặt đường.
- * - Bằng cách chia nhỏ mặt đường thành lưới mắt cáo (dx = 1.0m, dz = 1.8m), hàng nghìn đỉnh
- *   sẽ nhận chính xác cường độ sáng từ phương trình Spotlight, tạo ra vệt sáng nón loang tròn
- *   tự nhiên và mượt mà trên mặt đường nhựa vào ban đêm!
- */
 void drawRoadAndEnvironment(float totalDistance, float roadWidth, float roadLength) {
-    // 1. Dãy núi phía chân trời
+    // 1. Dãy núi xa chân trời
     drawMountains(roadLength);
 
     // 2. Dải cỏ xanh rộng lớn
@@ -608,9 +854,9 @@ void drawRoadAndEnvironment(float totalDistance, float roadWidth, float roadLeng
     applyMaterial(0.18f, 0.18f, 0.20f, 24.0f, 0.15f);
     glNormal3f(0.0f, 1.0f, 0.0f);
 
-    int nx = 12; // Chia chiều rộng thành 12 dải
+    int nx = 12;
     float dx = roadWidth / (float)nx;
-    float dz = 1.8f; // Bước lưới dọc trục Z
+    float dz = 1.8f;
 
     glBegin(GL_QUADS);
     for (float z = 30.0f; z > -roadLength; z -= dz) {
@@ -626,7 +872,7 @@ void drawRoadAndEnvironment(float totalDistance, float roadWidth, float roadLeng
     }
     glEnd();
 
-    // 5. Vạch kẻ đường phân làn đứt đoạn chuyển động vô tận
+    // 5. Vạch kẻ đường phân làn đứt đoạn
     applyMaterial(0.95f, 0.95f, 0.95f, 64.0f, 0.6f);
     float dashLength = 3.5f;
     float gapLength = 3.5f;
@@ -637,13 +883,11 @@ void drawRoadAndEnvironment(float totalDistance, float roadWidth, float roadLeng
     glNormal3f(0.0f, 1.0f, 0.0f);
     for (float z = -roadLength; z <= 30.0f; z += cycle) {
         float curZ = z + offsetZ;
-        // Phân làn giữa làn 0 và làn 1 (X = -1.75)
         glVertex3f(-1.85f, 0.02f, curZ);
         glVertex3f(-1.65f, 0.02f, curZ);
         glVertex3f(-1.65f, 0.02f, curZ - dashLength);
         glVertex3f(-1.85f, 0.02f, curZ - dashLength);
 
-        // Phân làn giữa làn 1 và làn 2 (X = +1.75)
         glVertex3f( 1.65f, 0.02f, curZ);
         glVertex3f( 1.85f, 0.02f, curZ);
         glVertex3f( 1.85f, 0.02f, curZ - dashLength);
@@ -663,7 +907,7 @@ void drawRoadAndEnvironment(float totalDistance, float roadWidth, float roadLeng
     glVertex3f( roadWidth * 0.5f - 0.35f, 0.02f, -roadLength);
     glEnd();
 
-    // 6. Hộ lan / Dải phân cách kim loại 2 bên mép đường
+    // 6. Hộ lan kim loại bảo vệ 2 bên mép đường
     applyMaterial(0.75f, 0.78f, 0.82f, 64.0f, 0.6f);
     glPushMatrix();
     glTranslatef(-roadWidth * 0.5f - 0.1f, 0.45f, -roadLength * 0.5f + 15.0f);

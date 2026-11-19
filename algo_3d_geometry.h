@@ -2,6 +2,15 @@
  * ============================================================================
  * MODULE 2: MÔ HÌNH HÓA ĐỐI TƯỢNG 3D & VECTOR PHÁP TUYẾN (ALGO_3D_GEOMETRY.H)
  * Dự án: 3D Endless Car Dodger (C++ & OpenGL / FreeGLUT)
+ * 
+ * Nâng cấp đồ họa:
+ *  - Siêu xe thể thao người chơi (Supercar): Thiết kế khí động học, gương chiếu hậu,
+ *    cánh gió thể thao kép, buồng lái kính cong trong suốt, cùm phanh thể thao đỏ.
+ *  - Đa dạng hóa các phương tiện giao thông cản đường:
+ *    + Xe tải Container khổng lồ (Semi-Trailer Truck)
+ *    + Xe buýt thành phố (City Transit Bus)
+ *    + Xe bán tải địa hình (Pickup Truck / SUV)
+ *    + Xe Sedan / Taxi đô thị (City Sedan / Taxi)
  * ============================================================================
  */
 
@@ -39,20 +48,29 @@ void drawCone(float radius, float height, int slices);
 // ============================================================================
 // 3. CÁC HÀM LẮP GHÉP ĐỐI TƯỢNG PHỨC HỢP VỚI PHÉP BIẾN ĐỔI HÌNH HỌC
 // ============================================================================
-void drawWheel(float radius, float width, float rotationAngle);
+// Bánh xe thể thao với cùm phanh đĩa (Brake Caliper) màu đỏ nổi bật
+void drawSportsWheel(float radius, float width, float rotationAngle, bool isLeft);
 
 // Đổ bóng đen bán trong suốt dưới gầm xe (Planar Shadow)
 void drawVehicleShadow(float x, float z, float width, float length);
 
-// Xe ô tô thể thao của người chơi (với kính chắn gió bán trong suốt)
-void drawCar(float x, float z, float rollAngle, float wheelAngle, bool isNight);
+// Siêu xe thể thao của người chơi (Supercar với kính chắn gió trong suốt, gương chiếu hậu, cánh gió kép)
+void drawSuperCar(float x, float z, float rollAngle, float wheelAngle, bool isNight);
 
-// Xe cản đường đối thủ
-void drawTrafficCar(float x, float y, float z, float r, float g, float b, float wheelAngle);
+// ============================================================================
+// 4. CÁC PHƯƠNG TIỆN GIAO THÔNG CẢN ĐƯỜNG (TRAFFIC VEHICLES)
+// ============================================================================
+// 1. Xe tải Container cỡ lớn (Semi-Trailer Truck)
+void drawSemiTruck(float x, float y, float z, float r, float g, float b, float wheelAngle);
 
-// Chướng ngại vật
-void drawObstacleCrate(float x, float y, float z, float size);
-void drawObstacleBarrier(float x, float y, float z, float w, float h, float l);
+// 2. Xe buýt thành phố (City Transit Bus)
+void drawCityBus(float x, float y, float z, float r, float g, float b, float wheelAngle);
+
+// 3. Xe bán tải địa hình (Pickup Truck / SUV)
+void drawPickupTruck(float x, float y, float z, float r, float g, float b, float wheelAngle);
+
+// 4. Xe Sedan / Taxi đô thị (City Sedan / Taxi)
+void drawSedanCar(float x, float y, float z, float r, float g, float b, float wheelAngle);
 
 // Cảnh quan hai bên đường
 void drawHouse(float x, float y, float z, float scale, float r, float g, float b);

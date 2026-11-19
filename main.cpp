@@ -3,13 +3,15 @@
  * MODULE 4: VÒNG LẶP CHÍNH, CAMERA, VA CHẠM & HUD (MAIN.CPP)
  * Dự án: 3D Endless Car Dodger (C++ & OpenGL / FreeGLUT)
  * 
- * Nâng cấp thẩm mỹ:
- *  - Khử răng cưa MSAA (GLUT_MULTISAMPLE & glEnable(GL_MULTISAMPLE))
- *  - Sương mù chiều sâu (GL_FOG)
- *  - Hệ thống hạt khói ống xả (Exhaust Particles)
- *  - Cơ chế phím Toggle 1, 2, 3, 4 (Nhấn lần 1 kích hoạt, nhấn lần 2 quay lại)
- *  - Phím Cách (Spacebar) để chơi lại khi Game Over
- *  - Giao diện HUD 2D kính mờ sắc nét
+ * Nâng cấp đồ họa:
+ *  - Siêu xe thể thao người chơi (Supercar)
+ *  - 4 Chủng loại phương tiện giao thông cản đường:
+ *    + 0: Xe Sedan / Taxi đô thị
+ *    + 1: Xe tải Container khổng lồ (Semi-Trailer Truck)
+ *    + 2: Xe buýt thành phố (City Transit Bus)
+ *    + 3: Xe bán tải địa hình (Pickup Truck / SUV)
+ *  - Khử răng cưa MSAA, Sương mù chiều sâu GL_FOG, Khói ống xả, Đổ bóng gầm xe
+ *  - Phím Toggle 1, 2, 3, 4 và Phím Cách (Spacebar) chơi lại
  * ============================================================================
  */
 
@@ -54,10 +56,12 @@ enum CameraView {
     CAM_FIRST_PERSON = 2
 };
 
-enum ObstacleType {
-    OBS_CRATE = 0,
-    OBS_BARRIER = 1,
-    OBS_CAR = 2
+// 4 Loại phương tiện giao thông cản đường
+enum VehicleType {
+    VEHICLE_SEDAN = 0,   // Xe Sedan / Taxi
+    VEHICLE_TRUCK = 1,   // Xe tải Container khổng lồ
+    VEHICLE_BUS = 2,     // Xe buýt thành phố
+    VEHICLE_PICKUP = 3   // Xe bán tải / SUV
 };
 
 enum SceneryType {
@@ -78,6 +82,10 @@ struct ExhaustParticle {
     float alpha;
 };
 
+/**
+ * [THUẬT TOÁN ĐỒ HỌA]: Phát hiện va chạm hộp bao AABB
+ * Kiểm tra giao nhau giữa 2 hộp bao song song trục tọa độ trên cả 3 trục X, Y, Z
+ */
 struct AABB {
     float minX, maxX;
     float minY, maxY;
@@ -90,22 +98,23 @@ struct AABB {
     }
 };
 
-struct Obstacle {
-    ObstacleType type;
+struct TrafficObstacle {
+    VehicleType type;
     int lane;
     float x, y, z;
     float width, height, length;
     float colorR, colorG, colorB;
+    float speedOffset;
     bool active;
 
     AABB getAABB() const {
         AABB b;
-        b.minX = x - width * 0.5f;
-        b.maxX = x + width * 0.5f;
+        b.minX = x - width * 0.48f;
+        b.maxX = x + width * 0.48f;
         b.minY = y;
         b.maxY = y + height;
-        b.minZ = z - length * 0.5f;
-        b.maxZ = z + length * 0.5f;
+        b.minZ = z - length * 0.48f;
+        b.maxZ = z + length * 0.48f;
         return b;
     }
 };
@@ -121,13 +130,13 @@ struct SceneryItem {
 // 3. BIẾN TOÀN CỤC CỦA TRÒ CHƠI
 // ============================================================================
 int currentRenderMode = MODE_GOURAUD_FULL;
-int previousRenderMode = MODE_GOURAUD_FULL; // Phục vụ cơ chế phím Toggle 1, 2, 3, 4
+int previousRenderMode = MODE_GOURAUD_FULL;
 CameraView currentCamera = CAM_THIRD_PERSON;
 bool isNightMode = false;
 bool showMinimap = true;
 bool isGameOver = false;
 
-// Trạng thái xe người chơi
+// Trạng thái siêu xe người chơi
 int currentLane = 1;
 float playerX = LANES[1];
 float playerZ = 0.0f;
@@ -142,11 +151,55 @@ float totalDistance = 0.0f;
 float score = 0.0f;
 
 // Danh sách vật thể trong thế giới 3D
-std::vector<Obstacle> obstacles;
+std::vector<TrafficObstacle> obstacles;
 std::vector<SceneryItem> sceneryItems;
 std::vector<ExhaustParticle> exhaustParticles;
 
 int lastTime = 0;
+
+// Hàm gán thông số kích thước hộp bao AABB theo loại phương tiện
+void setupVehicleSpecs(TrafficObstacle& obs) {
+    if (obs.type == VEHICLE_TRUCK) {
+        // Xe tải Container khổng lồ
+        obs.width = 2.3f;
+        obs.height = 2.85f;
+        obs.length = 8.2f;
+        obs.speedOffset = 11.0f; // Chạy chậm nhất
+        obs.colorR = 0.2f + (rand() % 60) * 0.01f;
+        obs.colorG = 0.2f + (rand() % 60) * 0.01f;
+        obs.colorB = 0.3f + (rand() % 60) * 0.01f;
+    } else if (obs.type == VEHICLE_BUS) {
+        // Xe buýt thành phố
+        obs.width = 2.2f;
+        obs.height = 2.5f;
+        obs.length = 6.8f;
+        obs.speedOffset = 8.0f;
+        obs.colorR = 0.9f; obs.colorG = 0.65f; obs.colorB = 0.1f; // Vàng cam bus
+    } else if (obs.type == VEHICLE_PICKUP) {
+        // Xe bán tải / SUV địa hình
+        obs.width = 1.9f;
+        obs.height = 1.6f;
+        obs.length = 4.5f;
+        obs.speedOffset = 6.0f;
+        obs.colorR = 0.2f + (rand() % 70) * 0.01f;
+        obs.colorG = 0.2f + (rand() % 70) * 0.01f;
+        obs.colorB = 0.2f + (rand() % 70) * 0.01f;
+    } else {
+        // Xe Sedan / Taxi
+        obs.width = 1.8f;
+        obs.height = 1.3f;
+        obs.length = 4.0f;
+        obs.speedOffset = 4.0f;
+        if (rand() % 3 == 0) {
+            // Taxi vàng
+            obs.colorR = 0.95f; obs.colorG = 0.85f; obs.colorB = 0.1f;
+        } else {
+            obs.colorR = 0.2f + (rand() % 70) * 0.01f;
+            obs.colorG = 0.2f + (rand() % 70) * 0.01f;
+            obs.colorB = 0.2f + (rand() % 70) * 0.01f;
+        }
+    }
+}
 
 // ============================================================================
 // 4. KHỞI TẠO MÔI TRƯỜNG VÀ VẬT THỂ
@@ -180,25 +233,15 @@ void initScenery() {
 
 void initObstacles() {
     obstacles.clear();
-    float startZ = -35.0f;
+    float startZ = -38.0f;
     for (int i = 0; i < 6; ++i) {
-        Obstacle obs;
+        TrafficObstacle obs;
         obs.lane = rand() % 3;
         obs.x = LANES[obs.lane];
         obs.y = 0.0f;
-        obs.z = startZ - i * 24.0f - (rand() % 6);
-        obs.type = (ObstacleType)(rand() % 3);
-
-        if (obs.type == OBS_CRATE) {
-            obs.width = 1.6f; obs.height = 1.6f; obs.length = 1.6f;
-        } else if (obs.type == OBS_BARRIER) {
-            obs.width = 1.8f; obs.height = 1.2f; obs.length = 1.0f;
-        } else {
-            obs.width = 1.75f; obs.height = 1.25f; obs.length = 3.8f;
-            obs.colorR = 0.2f + (rand() % 70) * 0.01f;
-            obs.colorG = 0.2f + (rand() % 70) * 0.01f;
-            obs.colorB = 0.2f + (rand() % 70) * 0.01f;
-        }
+        obs.z = startZ - i * 26.0f - (rand() % 8);
+        obs.type = (VehicleType)(rand() % 4);
+        setupVehicleSpecs(obs);
         obs.active = true;
         obstacles.push_back(obs);
     }
@@ -221,17 +264,17 @@ void resetGame() {
 }
 
 // ============================================================================
-// 5. QUẢN LÝ HỆ THỐNG HẠT KHÓI ỐNG XẢ (EXHAUST SMOKE PARTICLES)
+// 5. HỆ THỐNG HẠT KHÓI ỐNG XẢ (EXHAUST PARTICLES)
 // ============================================================================
 void spawnExhaustParticle(float posX, float posY, float posZ) {
     ExhaustParticle p;
-    p.x = posX + (rand() % 20 - 10) * 0.01f;
+    p.x = posX + (rand() % 16 - 8) * 0.01f;
     p.y = posY + (rand() % 10 - 5) * 0.01f;
     p.z = posZ;
 
     p.vx = (rand() % 40 - 20) * 0.01f;
-    p.vy = 0.5f + (rand() % 30) * 0.02f; // Bay nhẹ lên trên
-    p.vz = 4.0f + (rand() % 30) * 0.1f;  // Trôi giạt lùi lại phía sau
+    p.vy = 0.55f + (rand() % 30) * 0.02f;
+    p.vz = 4.0f + (rand() % 30) * 0.1f;
 
     p.life = 0.0f;
     p.maxLife = 0.55f + (rand() % 25) * 0.01f;
@@ -253,8 +296,8 @@ void updateParticles(float dt) {
             p.z += p.vz * dt;
 
             float prog = p.life / p.maxLife;
-            p.size = 0.12f + prog * 0.40f; // Hạt khói nở to dần
-            p.alpha = (1.0f - prog) * 0.45f; // Mờ dần
+            p.size = 0.12f + prog * 0.40f;
+            p.alpha = (1.0f - prog) * 0.45f;
             ++i;
         }
     }
@@ -272,7 +315,6 @@ void renderParticles() {
 
         glPushMatrix();
         glTranslatef(p.x, p.y, p.z);
-        // Vẽ hạt khói dạng hình khối bát giác mờ
         float r = p.size;
         glBegin(GL_TRIANGLE_FAN);
         glVertex3f(0.0f, 0.0f, 0.0f);
@@ -288,7 +330,7 @@ void renderParticles() {
 }
 
 // ============================================================================
-// 6. THIẾT LẬP CAMERA (CAMERA TRANSFORMATIONS)
+// 6. THIẾT LẬP CAMERA (CAM TRANSFORMATION)
 // ============================================================================
 void setupCamera() {
     glMatrixMode(GL_MODELVIEW);
@@ -346,7 +388,7 @@ void drawHUD() {
     int winH = glutGet(GLUT_WINDOW_HEIGHT);
 
     // 1. Khung mờ thông số trò chơi góc trên bên trái
-    glColor4f(0.04f, 0.06f, 0.10f, 0.75f);
+    glColor4f(0.04f, 0.06f, 0.10f, 0.78f);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBegin(GL_QUADS);
@@ -356,8 +398,8 @@ void drawHUD() {
     glVertex2f(15, winH - 175);
     glEnd();
 
-    // Viền khung sắc nét
-    glColor4f(0.2f, 0.6f, 0.9f, 0.6f);
+    // Viền xanh Neon
+    glColor4f(0.2f, 0.75f, 1.0f, 0.8f);
     glLineWidth(1.5f);
     glBegin(GL_LINE_LOOP);
     glVertex2f(15, winH - 15);
@@ -367,7 +409,7 @@ void drawHUD() {
     glEnd();
 
     glColor3f(1.0f, 0.85f, 0.1f);
-    renderBitmapString(28, winH - 40, GLUT_BITMAP_HELVETICA_18, "=== 3D CAR DODGER ===");
+    renderBitmapString(28, winH - 40, GLUT_BITMAP_HELVETICA_18, "=== 3D SUPERCAR DODGER ===");
 
     char buffer[128];
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -421,7 +463,7 @@ void drawHUD() {
 
     glColor3f(0.85f, 0.90f, 0.95f);
     renderBitmapString(20, 16, GLUT_BITMAP_HELVETICA_12,
-        "[A/D, Mui ten]: Lan | [W/S]: Toc do | [1-4 Toggle]: Che do do hoa | [N]: Ngay/Dem | [C]: Cam | [M]: Minimap | [Space]: Choi lai");
+        "[A/D, Mui ten]: Lan | [W/S]: Toc do | [1-4 Toggle]: Thuat toan | [N]: Ngay/Dem | [C]: Cam | [M]: Minimap | [Space]: Choi lai");
 
     // 4. Màn hình Game Over khi va chạm
     if (isGameOver) {
@@ -437,7 +479,6 @@ void drawHUD() {
         glVertex2f(bx1, by1 + boxH);
         glEnd();
 
-        // Viền đỏ rực cảnh báo
         glColor3f(1.0f, 0.2f, 0.2f);
         glLineWidth(3.0f);
         glBegin(GL_LINE_LOOP);
@@ -451,13 +492,12 @@ void drawHUD() {
         renderBitmapString(bx1 + 165, by1 + 175, GLUT_BITMAP_HELVETICA_18, "=== GAME OVER ===");
 
         glColor3f(1.0f, 1.0f, 1.0f);
-        renderBitmapString(bx1 + 95, by1 + 135, GLUT_BITMAP_HELVETICA_18, "Xe cua ban da va cham chuong ngai vat!");
+        renderBitmapString(bx1 + 80, by1 + 135, GLUT_BITMAP_HELVETICA_18, "Xe cua ban da va cham phuong tien giao thong!");
 
         std::snprintf(buffer, sizeof(buffer), "Tong diem thu duoc: %d diem", (int)score);
         glColor3f(0.3f, 1.0f, 0.3f);
         renderBitmapString(bx1 + 150, by1 + 95, GLUT_BITMAP_HELVETICA_18, buffer);
 
-        // Hướng dẫn dùng phím Cách để chơi lại
         glColor3f(1.0f, 1.0f, 0.1f);
         renderBitmapString(bx1 + 90, by1 + 45, GLUT_BITMAP_HELVETICA_18, ">> Nhan [ SPACE / PHIM CACH ] de choi lai <<");
     }
@@ -475,10 +515,8 @@ void drawHUD() {
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Kích hoạt chế độ đồ họa từ Module 3 (Khử khuất & Tô bóng)
     applyRenderMode(currentRenderMode);
 
-    // Thiết lập Camera, Nguồn sáng và Sương mù
     setupCamera();
     setupLighting(isNightMode, playerX, playerZ);
     setupFog(isNightMode);
@@ -498,22 +536,24 @@ void display() {
         }
     }
 
-    // 3. Vẽ chướng ngại vật
+    // 3. Vẽ các phương tiện giao thông cản đường
     for (size_t i = 0; i < obstacles.size(); ++i) {
-        const Obstacle& obs = obstacles[i];
+        const TrafficObstacle& obs = obstacles[i];
         if (!obs.active) continue;
 
-        if (obs.type == OBS_CRATE) {
-            drawObstacleCrate(obs.x, obs.y, obs.z, obs.width);
-        } else if (obs.type == OBS_BARRIER) {
-            drawObstacleBarrier(obs.x, obs.y, obs.z, obs.width, obs.height, obs.length);
+        if (obs.type == VEHICLE_TRUCK) {
+            drawSemiTruck(obs.x, obs.y, obs.z, obs.colorR, obs.colorG, obs.colorB, wheelRotationAngle);
+        } else if (obs.type == VEHICLE_BUS) {
+            drawCityBus(obs.x, obs.y, obs.z, obs.colorR, obs.colorG, obs.colorB, wheelRotationAngle);
+        } else if (obs.type == VEHICLE_PICKUP) {
+            drawPickupTruck(obs.x, obs.y, obs.z, obs.colorR, obs.colorG, obs.colorB, wheelRotationAngle);
         } else {
-            drawTrafficCar(obs.x, obs.y, obs.z, obs.colorR, obs.colorG, obs.colorB, wheelRotationAngle);
+            drawSedanCar(obs.x, obs.y, obs.z, obs.colorR, obs.colorG, obs.colorB, wheelRotationAngle);
         }
     }
 
-    // 4. Vẽ xe của người chơi (có kính chắn gió bán trong suốt và bóng đổ)
-    drawCar(playerX, playerZ, carRollAngle, wheelRotationAngle, isNightMode);
+    // 4. Vẽ Siêu xe thể thao Supercar của người chơi
+    drawSuperCar(playerX, playerZ, carRollAngle, wheelRotationAngle, isNightMode);
 
     // 5. Vẽ hiệu ứng hạt khói ống xả
     renderParticles();
@@ -553,23 +593,23 @@ void update(int value) {
         wheelRotationAngle += (movedDist / wheelRadius) * (180.0f / (float)M_PI);
         if (wheelRotationAngle > 36000.0f) wheelRotationAngle -= 36000.0f;
 
-        // Sinh hạt khói ống xả từ đuôi xe
-        spawnExhaustParticle(playerX - 0.55f, 0.22f, playerZ + 2.05f);
-        spawnExhaustParticle(playerX + 0.55f, 0.22f, playerZ + 2.05f);
+        // Sinh hạt khói ống xả từ cụm 4 ống xả của siêu xe
+        spawnExhaustParticle(playerX - 0.54f, 0.20f, playerZ + 2.06f);
+        spawnExhaustParticle(playerX + 0.54f, 0.20f, playerZ + 2.06f);
 
-        // Hộp bao va chạm AABB của xe người chơi
+        // Hộp bao va chạm AABB của siêu xe người chơi
         AABB playerBox;
-        playerBox.minX = playerX - 0.85f;
-        playerBox.maxX = playerX + 0.85f;
+        playerBox.minX = playerX - 0.90f;
+        playerBox.maxX = playerX + 0.90f;
         playerBox.minY = 0.0f;
         playerBox.maxY = 1.35f;
-        playerBox.minZ = playerZ - 1.9f;
-        playerBox.maxZ = playerZ + 1.9f;
+        playerBox.minZ = playerZ - 2.0f;
+        playerBox.maxZ = playerZ + 2.0f;
 
-        // Cập nhật chướng ngại vật
+        // Cập nhật các phương tiện giao thông trên đường
         for (size_t i = 0; i < obstacles.size(); ++i) {
-            Obstacle& obs = obstacles[i];
-            float relativeSpeed = (obs.type == OBS_CAR) ? (currentSpeed - 8.0f) : currentSpeed;
+            TrafficObstacle& obs = obstacles[i];
+            float relativeSpeed = currentSpeed - obs.speedOffset;
             obs.z += relativeSpeed * dt;
 
             // Kiểm tra va chạm AABB
@@ -577,17 +617,13 @@ void update(int value) {
                 isGameOver = true;
             }
 
-            // Tái sinh chướng ngại vật khi qua sau xe
+            // Tái sinh phương tiện khi đã trôi qua sau xe
             if (obs.z > 15.0f) {
-                obs.z = -ROAD_LENGTH + (rand() % 30);
+                obs.z = -ROAD_LENGTH + (rand() % 35);
                 obs.lane = rand() % 3;
                 obs.x = LANES[obs.lane];
-                obs.type = (ObstacleType)(rand() % 3);
-                if (obs.type == OBS_CAR) {
-                    obs.colorR = 0.2f + (rand() % 70) * 0.01f;
-                    obs.colorG = 0.2f + (rand() % 70) * 0.01f;
-                    obs.colorB = 0.2f + (rand() % 70) * 0.01f;
-                }
+                obs.type = (VehicleType)(rand() % 4);
+                setupVehicleSpecs(obs);
             }
         }
 
@@ -600,7 +636,6 @@ void update(int value) {
         }
     }
 
-    // Cập nhật vị trí và độ mờ của hạt khói
     updateParticles(dt);
 
     glutPostRedisplay();
@@ -612,19 +647,15 @@ void update(int value) {
 // ============================================================================
 void keyboard(unsigned char key, int x, int y) {
     switch (key) {
-        // [CƠ CHẾ PHÍM TOGGLE 1, 2, 3, 4]:
-        // Nhấn lần 1 kích hoạt chế độ đó, nhấn lần 2 quay trở lại chế độ trước đó
         case '1':
         case '2':
         case '3':
         case '4': {
             int selectedMode = key - '0';
             if (currentRenderMode == selectedMode) {
-                // Nhấn lần 2 -> Quay về chế độ mặc định hoặc trước đó
                 currentRenderMode = (previousRenderMode != selectedMode) ? previousRenderMode : MODE_GOURAUD_FULL;
                 std::printf("[TOGGLE] Da tat che do %d, tro ve che do: %d\n", selectedMode, currentRenderMode);
             } else {
-                // Nhấn lần 1 -> Kích hoạt chế độ mới
                 previousRenderMode = currentRenderMode;
                 currentRenderMode = selectedMode;
                 std::printf("[TOGGLE] Da kich hoat che do do hoa: %d\n", currentRenderMode);
@@ -632,28 +663,24 @@ void keyboard(unsigned char key, int x, int y) {
             break;
         }
 
-        // Bật / Tắt Ngày và Đêm
         case 'n':
         case 'N':
             isNightMode = !isNightMode;
             std::printf("[ANH SANG] Chuyen che do: %s\n", isNightMode ? "Ban Dem (Bat den pha)" : "Ban Ngay (Mat troi)");
             break;
 
-        // Đổi góc nhìn Camera
         case 'c':
         case 'C':
             currentCamera = (CameraView)((currentCamera + 1) % 3);
             std::printf("[CAMERA] Da doi goc nhin sang: %d\n", currentCamera);
             break;
 
-        // Bật / Tắt Minimap Radar 2D
         case 'm':
         case 'M':
             showMinimap = !showMinimap;
             std::printf("[MINIMAP] Da %s Minimap 2D\n", showMinimap ? "BAT" : "TAT");
             break;
 
-        // [NÂNG CẤP]: Phím CÁCH (Spacebar) để chơi lại khi Game Over
         case ' ':
             if (isGameOver) {
                 resetGame();
@@ -661,14 +688,12 @@ void keyboard(unsigned char key, int x, int y) {
             }
             break;
 
-        // Vẫn giữ phím R để thuận tiện
         case 'r':
         case 'R':
             resetGame();
             std::printf("[GAMEPLAY] Khoi dong lai tro choi!\n");
             break;
 
-        // Chuyển làn xe (A / D)
         case 'a':
         case 'A':
             if (!isGameOver && currentLane > 0) {
@@ -684,7 +709,6 @@ void keyboard(unsigned char key, int x, int y) {
             }
             break;
 
-        // Tăng / Giảm tốc độ (W / S)
         case 'w':
         case 'W':
             if (!isGameOver) {
@@ -698,7 +722,6 @@ void keyboard(unsigned char key, int x, int y) {
             }
             break;
 
-        // Thoát game
         case 27:
             std::printf("Cam on ban da trai nghiem 3D Endless Car Dodger!\n");
             std::exit(0);
@@ -755,14 +778,14 @@ void reshape(int width, int height) {
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
 
-    // [NÂNG CẤP KHỬ RĂNG CƯA]: Bật GLUT_MULTISAMPLE cho cạnh đa giác mịn màng
+    // Bật khử răng cưa đa mẫu (MSAA)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH | GLUT_MULTISAMPLE);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     glutInitWindowPosition(100, 100);
-    glutCreateWindow("3D Endless Car Dodger (Enhanced Visuals) - Do Hoa May Tinh");
+    glutCreateWindow("3D Endless Supercar Dodger - Do Hoa May Tinh");
 
     std::printf("==================================================================\n");
-    std::printf("  3D ENDLESS CAR DODGER - NANG CAP THAM MY & DIEU KHIEN TOGGLE    \n");
+    std::printf("  3D ENDLESS SUPERCAR DODGER - SIEU XE & PHUONG TIEN GIAO THONG   \n");
     std::printf("==================================================================\n");
     std::printf("Phim tat demo cho giang vien:\n");
     std::printf("  - Phim [1, 2, 3, 4]: Che do Toggle (Nhan lan 1 bat, nhan lan 2 tro ve cu)\n");
@@ -784,11 +807,10 @@ int main(int argc, char** argv) {
     initObstacles();
     initScenery();
 
-    // Cấu hình OpenGL
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_NORMALIZE);
-    glEnable(GL_MULTISAMPLE); // Bật khử răng cưa đa mẫu (MSAA)
+    glEnable(GL_MULTISAMPLE);
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
