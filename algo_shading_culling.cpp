@@ -11,33 +11,6 @@
 // ============================================================================
 // 1. THUẬT TOÁN KHỬ MẶT KHUẤT VÀ TÔ BÓNG (4 CHẾ ĐỘ DEMO)
 // ============================================================================
-/**
- * Giải thích nguyên lý thuật toán phục vụ thuyết trình:
- * 
- * 1. Wireframe (Chế độ 1):
- *    - Vẽ đối tượng chỉ bằng các cạnh khung dây (GL_LINE).
- *    - Tắt cả Depth-Buffer và Back-face culling để quan sát hình dạng lưới đa giác nguyên thủy.
- * 
- * 2. Back-face Culling (Chế độ 2):
- *    - Kiểm tra hướng của mặt phẳng đối với hướng nhìn của Camera: (N . V < 0).
- *    - Nếu mặt quay ra xa, loại bỏ ngay ở giai đoạn đầu của đồ họa, giảm 50% khối lượng xử lý.
- *    - Trong demo này, ta cố tình TẮT Z-Buffer để giảng viên quan sát thấy: Dù các mặt sau đã
- *      bị loại bỏ, nhưng các mặt trước vẫn có thể vẽ đè lên nhau sai thứ tự (Painter's problem),
- *      từ đó làm nổi bật sự cần thiết của Depth-Buffer.
- * 
- * 3. Depth-Buffer (Z-Buffer) + Flat Shading (Chế độ 3):
- *    - Z-Buffer so sánh độ sâu từng điểm ảnh z-value lưu trong bộ đệm depth. Điểm ảnh nào
- *      ở gần mắt hơn (z nhỏ hơn) sẽ được ghi đè, giải quyết triệt để vấn đề khử mặt khuất.
- *    - Tô bóng phẳng (Flat Shading - GL_FLAT): Tính toán ánh sáng duy nhất một lần tại một đỉnh
- *      đại diện của đa giác và gán màu đồng nhất cho toàn bộ bề mặt, làm lộ rõ các đường vân facet.
- * 
- * 4. Gouraud Shading + Phong Lighting (Chế độ 4 - Mặc định):
- *    - Tô bóng mượt Gouraud (GL_SMOOTH): Tính toán cường độ sáng tại TỪNG ĐỈNH dựa trên
- *      vector pháp tuyến đỉnh (Vertex Normal), sau đó nội suy song tuyến (Bilinear Interpolation)
- *      màu sắc qua bề mặt tam giác.
- *    - Kết hợp mô hình phản xạ Phong đầy đủ gồm 3 thành phần: Ambient (Môi trường),
- *      Diffuse (Khuếch tán Lambertian) và Specular (Phản chiếu bóng gương).
- */
 void applyRenderMode(int mode) {
     switch (mode) {
         case MODE_WIREFRAME:
@@ -45,6 +18,7 @@ void applyRenderMode(int mode) {
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_CULL_FACE);
             glDisable(GL_LIGHTING);
+            glDisable(GL_FOG); // Tắt sương mù để thấy rõ khung dây thuần túy
             break;
 
         case MODE_BACKFACE_CULL:
@@ -54,6 +28,7 @@ void applyRenderMode(int mode) {
             glFrontFace(GL_CCW);
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_LIGHTING);
+            glEnable(GL_FOG);
             break;
 
         case MODE_DEPTH_FLAT:
@@ -63,6 +38,7 @@ void applyRenderMode(int mode) {
             glDisable(GL_CULL_FACE);
             glEnable(GL_LIGHTING);
             glShadeModel(GL_FLAT); // Tô bóng phẳng
+            glEnable(GL_FOG);
             break;
 
         case MODE_GOURAUD_FULL:
@@ -75,6 +51,7 @@ void applyRenderMode(int mode) {
             glFrontFace(GL_CCW);
             glEnable(GL_LIGHTING);
             glShadeModel(GL_SMOOTH); // Tô bóng mượt Gouraud
+            glEnable(GL_FOG);
             break;
     }
 }
@@ -82,14 +59,6 @@ void applyRenderMode(int mode) {
 // ============================================================================
 // 2. HỆ THỐNG CHIẾU SÁNG & CHU KỲ NGÀY / ĐÊM (SPOTLIGHT)
 // ============================================================================
-/**
- * Giải thích nguyên lý nguồn sáng Spotlight cho báo cáo:
- * - Nguồn sáng đèn pha ô tô (GL_LIGHT1) là nguồn sáng vị trí có hướng (Positional Cutoff Light).
- * - Tham số GL_SPOT_CUTOFF = 42 độ: Xác định góc mở của hình nón chiếu sáng.
- * - Tham số GL_SPOT_DIRECTION = (0, -0.1, -1): Hướng trục nón chúc nhẹ xuống mặt đường.
- * - Tham số GL_SPOT_EXPONENT = 12.0: Cường độ sáng tập trung mạnh nhất ở trục tim nón và giảm dần ra mép.
- * - Hệ số suy giảm Attenuation: I = 1.0 / (kc + kl*d + kq*d^2) mô phỏng ánh sáng yếu dần khi chiếu ra xa.
- */
 void setupLighting(bool isNight, float carX, float carZ) {
     if (!isNight) {
         // [BAN NGÀY]: Bầu trời xanh dịu, Ánh sáng Mặt Trời (GL_LIGHT0)
@@ -125,8 +94,8 @@ void setupLighting(bool isNight, float carX, float carZ) {
         glLightfv(GL_LIGHT0, GL_SPECULAR, moonSpec);
 
         // Đèn pha ô tô dạng nón Spotlight (GL_LIGHT1)
-        GLfloat spotPos[4]  = { carX, 0.6f, carZ - 1.9f, 1.0f }; // W = 1: Nguồn sáng vị trí tại đầu xe
-        GLfloat spotDir[3]  = { 0.0f, -0.1f, -1.0f };            // Hướng chiếu dọc trục Z âm
+        GLfloat spotPos[4]  = { carX, 0.65f, carZ - 1.9f, 1.0f }; // W = 1: Vị trí tại đầu xe
+        GLfloat spotDir[3]  = { 0.0f, -0.12f, -1.0f };            // Hướng chiếu chếch xuống mặt đường
         GLfloat spotDiff[4] = { 1.0f, 0.98f, 0.85f, 1.0f };      // Màu vàng trắng sáng rực
         GLfloat spotSpec[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -146,10 +115,37 @@ void setupLighting(bool isNight, float carX, float carZ) {
 }
 
 // ============================================================================
-// 3. THIẾT LẬP VẬT LIỆU THEO MÔ HÌNH CHIẾU SÁNG PHONG
+// 3. THUẬT TOÁN SƯƠNG MÙ CHIỀU SÂU (GL_FOG)
+// ============================================================================
+/**
+ * Giải thích nguyên lý toán học cho báo cáo:
+ * - Phương trình hòa trộn sương mù: C = f * C_object + (1 - f) * C_fog
+ * - Với mô hình tuyến tính GL_LINEAR: f = (z_end - z) / (z_end - z_start)
+ * - Khi khoảng cách z tiến gần z_end, đối tượng mờ dần và hòa quyện hoàn toàn
+ *   vào màu nền bầu trời, che đi vết cắt đột ngột tại mặt phẳng cắt xa zFar.
+ */
+void setupFog(bool isNight) {
+    glEnable(GL_FOG);
+    glFogi(GL_FOG_MODE, GL_LINEAR);
+    glFogf(GL_FOG_START, 35.0f);
+    glFogf(GL_FOG_END, 160.0f);
+
+    if (!isNight) {
+        // Sương mù ban ngày màu xanh da trời nhạt đồng bộ với glClearColor
+        GLfloat fogColor[4] = { 0.52f, 0.78f, 0.95f, 1.0f };
+        glFogfv(GL_FOG_COLOR, fogColor);
+    } else {
+        // Sương mù ban đêm màu xanh đen thẫm
+        GLfloat fogColor[4] = { 0.04f, 0.04f, 0.09f, 1.0f };
+        glFogfv(GL_FOG_COLOR, fogColor);
+    }
+}
+
+// ============================================================================
+// 4. THIẾT LẬP VẬT LIỆU THEO MÔ HÌNH CHIẾU SÁNG PHONG
 // ============================================================================
 void applyMaterial(float r, float g, float b, float shininess, float specVal) {
-    glColor3f(r, g, b); // Màu trực tiếp cho Wireframe / Unlit
+    glColor3f(r, g, b);
 
     GLfloat ambDiff[4]  = { r, g, b, 1.0f };
     GLfloat specular[4] = { specVal, specVal, specVal, 1.0f };

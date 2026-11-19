@@ -5,17 +5,14 @@
  * 
  * Mô tả module:
  *  - Cài đặt và tích hợp 4 chế độ thuật toán đồ họa máy tính quan trọng:
- *    1. Khung dây (Wireframe - GL_LINE): quan sát cấu trúc lưới đa giác nguyên thủy.
- *    2. Khử mặt sau Back-face Culling (GL_CULL_FACE, GL_BACK, GL_CCW): loại bỏ
- *       các mặt hướng ra xa camera dựa trên dấu tích vô hướng (N . V < 0).
- *    3. Khử mặt khuất bằng Depth-Buffer (Z-Buffer) kết hợp Tô bóng phẳng (Flat Shading - GL_FLAT).
- *    4. Khử mặt khuất Z-Buffer kết hợp Tô bóng mượt (Gouraud Shading - GL_SMOOTH)
- *       và mô hình chiếu sáng Phong đầy đủ.
+ *    1. Khung dây (Wireframe - GL_LINE).
+ *    2. Khử mặt sau Back-face Culling (GL_CULL_FACE, GL_BACK, GL_CCW).
+ *    3. Khử mặt khuất bằng Depth-Buffer (Z-Buffer) + Tô bóng phẳng (Flat Shading - GL_FLAT).
+ *    4. Khử mặt khuất Z-Buffer + Tô bóng mượt (Gouraud Shading - GL_SMOOTH) + Phong Lighting.
  *  - Quản lý chu kỳ Ngày / Đêm:
  *    + Ban ngày: Nguồn sáng mặt trời định hướng GL_LIGHT0.
- *    + Ban đêm: Nguồn sáng đèn pha ô tô dạng nón Spotlight GL_LIGHT1
- *      với các tham số góc mở GL_SPOT_CUTOFF, hướng chiếu GL_SPOT_DIRECTION,
- *      và suy giảm khoảng cách Attenuation.
+ *    + Ban đêm: Nguồn sáng đèn pha ô tô dạng nón Spotlight GL_LIGHT1.
+ *  - Hiệu ứng Sương mù chiều sâu (GL_FOG): Làm dịu đường chân trời và che vết cắt zFar.
  * ============================================================================
  */
 
@@ -42,6 +39,12 @@ void applyRenderMode(int mode);
  * @param carX, carZ: Tọa độ xe người chơi để định vị nguồn sáng đèn pha ô tô (GL_LIGHT1)
  */
 void setupLighting(bool isNight, float carX, float carZ);
+
+/**
+ * [THUẬT TOÁN ĐỒ HỌA]: Cấu hình hiệu ứng Sương mù chiều sâu (GL_FOG)
+ * @param isNight: Ban ngày sương mù màu xanh trời nhạt, Ban đêm sương mù màu xanh thẫm
+ */
+void setupFog(bool isNight);
 
 /**
  * Thiết lập vật liệu phản xạ theo mô hình ánh sáng Phong (Ambient, Diffuse, Specular)
